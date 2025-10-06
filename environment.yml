@@ -1,0 +1,14 @@
+name: gg337
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - spacy
+  - nltk
+  - jupyterlab
+  - ftfy
+  - unidecode
+  - inflection
+  - pip  # Include pip for installing langdetect
+  - pip:
+      - langdetect  # Install langdetect via pip

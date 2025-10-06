@@ -1,0 +1,7 @@
+spacy
+nltk
+jupyterlab
+ftfy
+unidecode
+inflection
+langdetect
