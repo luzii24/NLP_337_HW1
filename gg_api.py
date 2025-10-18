@@ -152,6 +152,9 @@ def pre_ceremony():
     print("Pre-ceremony processing complete.")
     return
 
+from nlp_pipeline.extract_nominees import extract_nominees
+import json
+
 def main():
     '''Main function that orchestrates the Golden Globes analysis.
     
@@ -173,7 +176,42 @@ def main():
         - Make sure to handle errors gracefully
     '''
     # Your code here
-    return
+    # Load tweets
+    tweets = []
+    with open("tweets_cleaned.jsonl", "r") as f:
+        for line in f:
+            try:
+                obj = json.loads(line)
+                tweets.append(obj["text"])  # if each line has {"text": "..."}
+            except json.JSONDecodeError:
+                continue
+
+    # Hardcoded award names (global from gg_api.py)
+    global AWARD_NAMES
+
+    # Run nominee extraction
+    nominees = extract_nominees(tweets, AWARD_NAMES)
+
+    # Construct output
+    output = {
+        "Host": ["Tina Fey", "Amy Poehler"]  # placeholder
+    }
+
+    for award in AWARD_NAMES:
+        output[award] = {
+            "Presenters": [],
+            "Nominees": nominees.get(award, []),
+            "Winner": ""
+        }
+
+    # Save to final_output.json
+    with open("final_output.json", "w") as f:
+        json.dump(output, f, indent=2)
+
+    print("Done, nominees written to final_output.json")
+
+    print(f"Loaded {len(tweets)} tweets")
+    print("Sample tweet:", tweets[0])
 
 if __name__ == '__main__':
     main()
