@@ -148,7 +148,76 @@ def pre_ceremony():
         - This function should handle all one-time setup tasks
         - Print progress messages to help with debugging
     '''
-    # Your code here
+    import io
+    import json
+    import re
+    import zipfile
+    from datetime import datetime
+    from ftfy import fix_text
+    import unidecode as _unidecode
+
+    # look for raw data in the current directory
+    input_candidates = ["gg2013.json.zip", "gg2013.json"]
+    in_path = next((p for p in input_candidates if __import__("os").path.exists(p)), None)
+    if in_path is None:
+        print("WARNING: raw file not found. Put gg2013.json.zip or gg2013.json next to gg_api.py")
+        return
+
+    # regex + dash normalization (keep hyphens, standardize all dash variants to '-')
+    url_re = re.compile(r"https?://\S+")
+    mention_re = re.compile(r"@\w+")
+    hashtag_re = re.compile(r"#\w+")
+    dash_map = dict.fromkeys(map(ord, "–—‐−‒"), ord("-"))
+
+    def _clean(text: str) -> str:
+        if not text:
+            return ""
+        text = fix_text(text)
+        text = _unidecode.unidecode(text)
+        text = text.translate(dash_map)                 # keep hyphens
+        text = url_re.sub("", text)
+        text = re.sub(r"\brt\b", "", text, flags=re.IGNORECASE)
+        text = mention_re.sub("", text)
+        text = hashtag_re.sub("", text)
+        # remove punctuation EXCEPT hyphen-minus
+        text = re.sub(r"[^A-Za-z0-9\s\-]", " ", text)
+        text = " ".join(text.split())
+        return text
+
+    def _iter_records():
+        if in_path.endswith(".zip"):
+            with zipfile.ZipFile(in_path) as zf:
+                inner = zf.namelist()[0]  # assume single JSON member
+                with zf.open(inner, "r") as fh:
+                    yield from json.load(io.TextIOWrapper(fh, encoding="utf-8"))
+        else:
+            with open(in_path, "r", encoding="utf-8") as fh:
+                yield from json.load(fh)
+
+    wrote = 0
+    with open("tweets_cleaned.jsonl", "w", encoding="utf-8") as out:
+        for t in _iter_records():
+            raw_text = t.get("text") or ""
+            cleaned = _clean(raw_text)
+
+            ts_ms = t.get("timestamp_ms")
+            try:
+                ts_iso = datetime.fromtimestamp(int(ts_ms) / 1000.0).isoformat() if ts_ms else None
+            except Exception:
+                ts_iso = None
+
+            rec = {
+                "id": t.get("id"),
+                "timestamp": ts_iso,
+                "screen_name": (t.get("user") or {}).get("screen_name"),
+                "user_id": (t.get("user") or {}).get("id"),
+                "text": cleaned,           # cleaned, hyphen-preserved text for extraction
+                "text_original": raw_text  # optional: for debugging
+            }
+            out.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            wrote += 1
+
+    print(f"Pre-ceremony: wrote {wrote} cleaned tweets to tweets_cleaned.jsonl")
     print("Pre-ceremony processing complete.")
     return
 
@@ -177,41 +246,35 @@ def main():
     '''
     # Your code here
     # Load tweets
-    tweets = []
-    with open("tweets_cleaned.jsonl", "r") as f:
-        for line in f:
-            try:
-                obj = json.loads(line)
-                tweets.append(obj["text"])  # if each line has {"text": "..."}
-            except json.JSONDecodeError:
-                continue
+    # set up environment, extract cleaned tweets
+    pre_ceremony()
 
     # Hardcoded award names (global from gg_api.py)
     global AWARD_NAMES
 
-    # Run nominee extraction
-    nominees = extract_nominees(tweets, AWARD_NAMES)
+    # # Run nominee extraction
+    # # nominees = extract_nominees(tweets, AWARD_NAMES)
 
-    # Construct output
-    output = {
-        "Host": ["Tina Fey", "Amy Poehler"]  # placeholder
-    }
+    # # Construct output
+    # output = {
+    #     "Host": ["Tina Fey", "Amy Poehler"]  # placeholder
+    # }
 
-    for award in AWARD_NAMES:
-        output[award] = {
-            "Presenters": [],
-            "Nominees": nominees.get(award, []),
-            "Winner": ""
-        }
+    # for award in AWARD_NAMES:
+    #     output[award] = {
+    #         "Presenters": [],
+    #         "Nominees": nominees.get(award, []),
+    #         "Winner": ""
+    #     }
 
-    # Save to final_output.json
-    with open("final_output.json", "w") as f:
-        json.dump(output, f, indent=2)
+    # # Save to final_output.json
+    # with open("final_output.json", "w") as f:
+    #     json.dump(output, f, indent=2)
 
-    print("Done, nominees written to final_output.json")
+    # print("Done, nominees written to final_output.json")
 
-    print(f"Loaded {len(tweets)} tweets")
-    print("Sample tweet:", tweets[0])
+    # print(f"Loaded {len(tweets)} tweets")
+    # print("Sample tweet:", tweets[0])
 
 if __name__ == '__main__':
     main()
