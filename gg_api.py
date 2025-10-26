@@ -9,12 +9,32 @@ YEAR = "2013"
 # as the keys for their returned dictionaries
 # Students should populate this list with the actual award categories for their year, to avoid cascading errors on outputs that depend on correctly extracting award names (e.g., nominees, presenters, winner)
 AWARD_NAMES = [
-    "best motion picture - drama",
+    "best screenplay - motion picture",
+    "best director - motion picture",
+    "best performance by an actress in a television series - comedy or musical",
+    "best foreign language film",
+    "best performance by an actor in a supporting role in a motion picture",
+    "best performance by an actress in a supporting role in a series, mini-series or motion picture made for television",
     "best motion picture - comedy or musical",
+    "best performance by an actress in a motion picture - comedy or musical",
+    "best mini-series or motion picture made for television",
+    "best original score - motion picture",
+    "best performance by an actress in a television series - drama",
+    "best performance by an actress in a motion picture - drama",
+    "cecil b. demille award",
+    "best performance by an actor in a motion picture - comedy or musical",
+    "best motion picture - drama",
+    "best performance by an actor in a supporting role in a series, mini-series or motion picture made for television",
+    "best performance by an actress in a supporting role in a motion picture",
+    "best television series - drama",
+    "best performance by an actor in a mini-series or motion picture made for television",
+    "best performance by an actress in a mini-series or motion picture made for television",
+    "best animated feature film",
+    "best original song - motion picture",
     "best performance by an actor in a motion picture - drama",
-    # Add or modify categories as needed for your year
-    "your custom award category",
-    # ... etc
+    "best television series - comedy or musical",
+    "best performance by an actor in a television series - drama",
+    "best performance by an actor in a television series - comedy or musical"
 ]
 
 def get_hosts(year):
