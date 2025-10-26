@@ -40,8 +40,8 @@ To Run:
         - Results: Bradley Cooper was Best Dressed and Sofia Vergara was Worst Dressed 
     - humor: Finds the top funniest people of the night and popular jokes themes
         - Funniest People: ['Amy Poehler', 'Tina Fey', 'Will Ferrell', 'James Cameron', 'Kristen Wiig']
-    - 
-
+    - performances: fins the performers and the speakers in the award
+        - Most mentioned performers and speakers:['Jodie Foster', 'Anne Hathaway', 'Adele', 'Amy Poehler', 'Tina Fey', 'Jodie', 'Daniel Day Lewis', 'Kevin Costner']
 
 Github repo:
 https://github.com/luzii24/NLP_337_HW1
