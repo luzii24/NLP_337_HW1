@@ -5,3 +5,4 @@ ftfy
 unidecode
 inflection
 langdetect
+icrawler

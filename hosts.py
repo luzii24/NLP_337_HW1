@@ -8,9 +8,11 @@ host_verbs = re.compile(
     re.IGNORECASE,
 )
 
-all_names = re.compile(r"[a-z][a-z']+")
-name_chunk = re.compile(r"\b([a-z']+\s+[a-z']+(?:\s+[a-z']+)?)(?=\b)")
-name_pair = re.compile(r"\b([a-z']+\s+[a-z']+)\s+and\s+([a-z']+\s+[a-z']+)\b")
+all_names = r"[A-Z][a-z']+"
+name_chunk = re.compile(rf"\b({all_names}\s+{all_names}(?:\s+{all_names})?)\b")
+name_pair  = re.compile(rf"\b({all_names}\s+{all_names})\s+(?:&|and)\s+({all_names}\s+{all_names})\b")
+
+
 
 def load_clean_tweets(path: str) -> Iterable[dict]: 
     #want it to be a generator so we dont just return all tweets in a list
@@ -81,11 +83,11 @@ def find_window(tweets: Iterable[dict], window_minutes: int = 40):
 
 def clean_name(s:str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
-    names = [n for n in all_names.findall(s)]
-    if len(names) < 2:  # prefer at least first+last
+    names = s.split()
+    if not (2 <= len(names) <= 3):  # prefer at least first+last
         return ""
-    # keep only first 2–3 names
-    names = names[:3]
+    if not all(re.match(r"^[A-Z][a-z']+$", n) for n in names):
+        return ""
     return " ".join(names)
 
 def get_name_candidates(text: str) -> List[str]:
@@ -153,7 +155,7 @@ def find_hosts(cleaned_path: str, drop_retweets: bool=True, window_minutes: int=
         if not has_host:
             continue #want tweets that are host related
 
-        base = 2 if ("opening monologue" in text or "please welcome" in text) else 1
+        base = 2 if ("opening monologue" in text.lower() or "please welcome" in text.lower()) else 1
 
         for name in get_name_candidates(text):
             scores[name] += base
@@ -161,6 +163,8 @@ def find_hosts(cleaned_path: str, drop_retweets: bool=True, window_minutes: int=
     if not scores:
         return []
     
+
+    #print(scores.most_common(5))
     hosts = finalize_hosts(scores.most_common(2))
   
     return hosts
