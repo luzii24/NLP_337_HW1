@@ -154,7 +154,7 @@ def extract_presenters(data_path, HARD_AWARD_CATEGORIES):
     # clean and normalize tweets
     
    
-    keywords = ["present", "announce", "read", "introduce", "give",]
+    keywords = ["present", "announce", "read", "introduce", "give"]
     filtered_tweets = [t for t in tweets if any(kw in t.lower() for kw in keywords)]
     
     print(f"Filtered down to {len(filtered_tweets)} presenter-related tweets")
@@ -178,8 +178,8 @@ def extract_presenters(data_path, HARD_AWARD_CATEGORIES):
     presenter_STOPWORDS = {"As", "They", "Are", "While", "When"}
     
 
-    # for tweet in tqdm(filtered_tweets, desc="Parsing"):
-    for tweet in filtered_tweets:
+    for tweet in tqdm(filtered_tweets, desc="Extracting presenters"):
+    # for tweet in filtered_tweets:
         tweet_lower = tweet.lower()
 
         for pattern in presenter_patterns:
