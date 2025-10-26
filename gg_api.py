@@ -17,6 +17,7 @@ AWARD_NAMES = [
 ]
 
 def get_hosts(year):
+
     '''Returns the host(s) of the Golden Globes ceremony for the given year.
     
     Args:
@@ -31,6 +32,10 @@ def get_hosts(year):
         - The function should return a list even if there's only one host
     '''
     # Your code here
+    from hosts import find_hosts
+    cleaned_path = "tweets_cleaned.jsonl"
+    hosts = find_hosts(cleaned_path)
+
     return hosts
 
 def get_awards(year):
@@ -247,8 +252,33 @@ def main():
     # Your code here
     # Load tweets
     # set up environment, extract cleaned tweets
-    pre_ceremony()
+    print("Starting main")
+    #pre_ceremony()
+    cleaned_path = "tweets_cleaned.jsonl"
+    print("Finding Hosts:")
+    hosts= get_hosts(YEAR)
+    print("Host(s): ", hosts)
+    
+    print("Analyzing Red Carpet:")
+    from red_carpet import find_best_worst
+    import nltk
+    from nltk.sentiment import SentimentIntensityAnalyzer
 
+
+    try:
+        nltk.data.find("sentiment/vader_lexicon.zip")
+    except LookupError:
+        print("Downloading VADER sentiment lexicon...")
+        nltk.download("vader_lexicon")
+
+    rc_results = find_best_worst(cleaned_path, year = YEAR, top_k=5)
+    
+    print("Analyzing Humor:")
+    from humor import find_jokes
+    humor = find_jokes(cleaned_path, top_k_people=5, top_k_themes=5)
+    
+    
+    
     # Hardcoded award names (global from gg_api.py)
     global AWARD_NAMES
 
