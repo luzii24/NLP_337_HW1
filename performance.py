@@ -80,5 +80,4 @@ def get_performance():
 
     top_entities = cleaned_summary["clean_entity"].head(8).tolist()
     print("\nMost mentioned performers and speakers:")
-    for name in top_entities:
-        print("-", name)
+    print(top_entities)
