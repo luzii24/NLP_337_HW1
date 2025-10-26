@@ -1,5 +1,6 @@
 '''Version 0.5'''
-
+from nlp_pipeline.extract_awards import extract_awards
+from nlp_pipeline.extract_presenters import extract_presenters
 # Year of the Golden Globes ceremony being analyzed
 YEAR = "2013"
 
@@ -53,6 +54,7 @@ def _load_jsonl(path: str):
     return rows
 
 def get_hosts(year):
+
     '''Returns the host(s) of the Golden Globes ceremony for the given year.
     
     Args:
@@ -174,13 +176,12 @@ def get_winner(year):
     tweets = _load_jsonl("tweets_cleaned.jsonl")
     awards_for_extractor = [a.strip().lower() for a in AWARD_NAMES]
 
-    # run winner extractor (kept simple on purpose)
+    # run winner extractor 
     raw_winners = extract_winners(
         tweets=tweets,
         award_names=awards_for_extractor,
         debug=False,
     )
-
     # make sure every key exists and every value is a string
     winners_out = {}
     for aw in awards_for_extractor:
@@ -215,7 +216,7 @@ def get_presenters(year):
         - Each value should be a list of strings, even if there's only one presenter
     '''
     # Your code here
-    from nlp_pipeline.extract_presenter import extract_presenters
+    from nlp_pipeline.extract_presenters import extract_presenters
     data_path = "tweets_cleaned.jsonl"
     presenters_out = extract_presenters(data_path, AWARD_NAMES)
     return {aw: presenters_out.get(aw, []) for aw in AWARD_NAMES}
@@ -244,14 +245,14 @@ def pre_ceremony():
     from ftfy import fix_text
     import unidecode as _unidecode
 
-    # look for raw data in the current directory
+    # look for raw data in the current dir
     input_candidates = ["gg2013.json.zip", "gg2013.json"]
     in_path = next((p for p in input_candidates if __import__("os").path.exists(p)), None)
     if in_path is None:
         print("WARNING: raw file not found. Put gg2013.json.zip or gg2013.json next to gg_api.py")
         return
 
-    # regex + dash normalization (keep hyphens, standardize all dash variants to '-')
+    # regex + dash normalization to '-'
     url_re = re.compile(r"https?://\S+")
     mention_re = re.compile(r"@\w+")
     hashtag_re = re.compile(r"#\w+")
@@ -267,7 +268,7 @@ def pre_ceremony():
         text = re.sub(r"\brt\b", "", text, flags=re.IGNORECASE)
         text = mention_re.sub("", text)
         text = hashtag_re.sub("", text)
-        # remove punctuation except hyphen-minus
+        # remove punctuation except -
         text = re.sub(r"[^A-Za-z0-9\s\-]", " ", text)
         text = " ".join(text.split())
         return text
@@ -275,7 +276,7 @@ def pre_ceremony():
     def _iter_records():
         if in_path.endswith(".zip"):
             with zipfile.ZipFile(in_path) as zf:
-                inner = zf.namelist()[0]  # assume single JSON member
+                inner = zf.namelist()[0]  
                 with zf.open(inner, "r") as fh:
                     yield from json.load(io.TextIOWrapper(fh, encoding="utf-8"))
         else:
@@ -357,9 +358,52 @@ def main():
     with open("final_output.json", "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
 
-    nominees_filled = sum(1 for a in AWARD_NAMES if output[a]["Nominees"])
-    winners_filled = sum(1 for a in AWARD_NAMES if output[a]["Winner"])
-    print(f"wrote final_output.json — nominees found for {nominees_filled}/{len(AWARD_NAMES)}; winners found for {winners_filled}/{len(AWARD_NAMES)}.")
+    # Additional goals 
+    print("Running additional goals (red carpet, humor, performance, sentiment)...")
+
+    try:
+        import red_carpet
+        red_carpet_results = red_carpet.find_best_worst("tweets_cleaned.jsonl", YEAR)
+    except Exception as e:
+        print(f"red_carpet extraction failed: {e}")
+        red_carpet_results = {}
+
+    try:
+        import humor
+        humor_results = humor.find_jokes("tweets_cleaned.jsonl")
+    except Exception as e:
+        print(f"humor extraction failed: {e}")
+        humor_results = {}
+
+    try:
+        import performance
+        performance_results = performance.get_performance()
+    except Exception as e:
+        print(f"performance extraction failed: {e}")
+        performance_results = {}
+
+    try:
+        import sentiment_analysis
+        sentiment_analysis.analyze_sentiment("tweets_cleaned.jsonl", "sentiment_summary.json")
+        sentiment_results = json.load(open("sentiment_summary.json", "r", encoding="utf-8"))
+    except Exception as e:
+        print(f"sentiment analysis failed: {e}")
+        sentiment_results = {}
+
+    additional_output = {
+        "Year": YEAR,
+        "red_carpet": red_carpet_results,
+        "humor": humor_results,
+        "performance": performance_results,
+        "sentiment_analysis": sentiment_results,
+    }
+
+    with open("additional_output.json", "w", encoding="utf-8") as f:
+        json.dump(additional_output, f, indent=2, ensure_ascii=False)
+
+    print("Wrote additional_output.json (additional goals)")
+
+    
 
 if __name__ == '__main__':
     main()

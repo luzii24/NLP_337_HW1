@@ -1,170 +1,241 @@
-import spacy
-import re
-from collections import defaultdict
-import ftfy
-from unidecode import unidecode
-from langdetect import detect
-import inflection
-import nltk
-from nltk import word_tokenize, pos_tag
-from difflib import get_close_matches
-from imdb import Cinemagoer
-from functools import lru_cache
-ia = Cinemagoer()
+from __future__ import annotations
 
-HARD_AWARD_CATEGORIES = {
-    "best screenplay - motion picture",
-    "best director - motion picture",
-    "best performance by an actress in a television series - comedy or musical",
-    "best foreign language film",
-    "best performance by an actor in a supporting role in a motion picture",
-    "best performance by an actress in a supporting role in a series, mini-series or motion picture made for television",
-    "best motion picture - comedy or musical",
-    "best performance by an actress in a motion picture - comedy or musical",
-    "best mini-series or motion picture made for television",
-    "best original score - motion picture",
-    "best performance by an actress in a television series - drama",
-    "best performance by an actress in a motion picture - drama",
-    "cecil b. demille award",
-    "best performance by an actor in a motion picture - comedy or musical",
-    "best motion picture - drama",
-    "best performance by an actor in a supporting role in a series, mini-series or motion picture made for television",
-    "best performance by an actress in a supporting role in a motion picture",
-    "best television series - drama",
-    "best performance by an actor in a mini-series or motion picture made for television",
-    "best performance by an actress in a mini-series or motion picture made for television",
-    "best animated feature film",
-    "best original song - motion picture",
-    "best performance by an actor in a motion picture - drama",
-    "best television series - comedy or musical",
-    "best performance by an actor in a television series - drama",
-    "best performance by an actor in a television series - comedy or musical"
+import json
+import re
+from collections import Counter
+from typing import List, Dict
+
+import spacy
+
+from difflib import SequenceMatcher
+
+# quick filters to keep garbage out of candidates (keep lowercase)
+STOP_SPAN = {
+    "best", "golden", "globe", "globes", "award", "awards",
+    "drama", "comedy", "musical", "series", "television",
+    "actor", "actress", "wins", "winner", "nominee", "nominated"
 }
 
-# Helper functions to validate real movies and people using Cinemagoer
-@lru_cache(maxsize=10000)
-def is_real_movie(title):
+BAD_CAND_SUBSTR = (
+    "@", "http://", "https://", "www.", "pic.twitter", "#"
+)
+
+# load spacy model once
+_NLP = spacy.load("en_core_web_sm")
+
+def to_text(row) -> str:
+    if isinstance(row, str):
+        return row
+    if isinstance(row, dict):
+        return row.get("text") or row.get("text_original") or ""
+    return ""
+
+def normalize(s: str) -> str:
+    return re.sub(r"\s+", " ", s.strip().lower())
+
+def token_set(s: str) -> set:
+    return set(re.findall(r"[a-z0-9\-]+", normalize(s)))
+
+def slice_best_phrase(text_lower: str, max_tokens: int = 8) -> str | None:
+    # best slice
+    if "best" not in text_lower:
+        return None
+    toks = re.findall(r"[a-z0-9\-]+", text_lower)
     try:
-        results = ia.search_movie(title)
-        return bool(results and results[0].get('kind') in {'movie', 'tv series', 'tv mini series'})
-    except:
-        return False
+        start = toks.index("best")
+    except ValueError:
+        return None
 
-@lru_cache(maxsize=10000)
-def is_real_person(name):
-    try:
-        results = ia.search_person(name)
-        return bool(results)
-    except:
-        return False
+    stop_words = {
+        "award", "awards", "drama", "comedy", "musical", "film", "movie",
+        "director", "series", "limited", "animated", "foreign", "score", "song"
+    }
 
-nlp = spacy.load("en_core_web_sm")
+    out = []
+    for i, tok in enumerate(toks[start:start + max_tokens]):
+        out.append(tok)
+        if tok in stop_words and i >= 1:
+            break
+    return " ".join(out).strip() if out else None
 
 
-def extract_nominees(tweets, award_names):
-    '''
-    Given cleaned tweets and known award names, return a dictionary mapping
-    each award to a list of nominee names extracted from tweets.
-    '''
-    nominees = defaultdict(set)
+def is_person_award(name: str) -> bool:
+    a = name.lower()
+    return any(k in a for k in ["actor", "actress", "director", "screenplay", "cecil b. demille"])  # person-centric
 
-    # clean and normalize tweets
-    cleaned_tweets = []
-    for tweet in tweets:
-        try:
-            fixed = ftfy.fix_text(tweet)
-            normalized = unidecode(fixed)
-            if detect(normalized) == 'en':
-                cleaned_tweets.append(normalized)
-        except:
+
+def token_overlap(a: str, b: str) -> float:
+    # simple overlap to pick the closest award
+    ta, tb = token_set(a), token_set(b)
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / float(len(tb))
+
+
+def titlecase_spans(doc) -> list[str]:
+    # collect 1-5 token title-cased spans, useful for movie/show names
+    out, cur = [], []
+    for tok in doc:
+        if tok.is_space:
+            if cur:
+                txt = " ".join(cur)
+                # skip if the span contains category words like "best", "award" etc
+                if not any(w.lower() in STOP_SPAN for w in txt.split()):
+                    out.append(txt)
+                cur = []
+            continue
+        t = tok.text
+        if t[:1].isupper() and not t.isupper():  # avoid all-caps shoutout
+            cur.append(t)
+            if len(cur) >= 5:
+                txt = " ".join(cur)
+                if not any(w.lower() in STOP_SPAN for w in txt.split()):
+                    out.append(txt)
+                cur = []
+        else:
+            if cur:
+                txt = " ".join(cur)
+                if not any(w.lower() in STOP_SPAN for w in txt.split()):
+                    out.append(txt)
+                cur = []
+    if cur:
+        txt = " ".join(cur)
+        if not any(w.lower() in STOP_SPAN for w in txt.split()):
+            out.append(txt)
+    return out
+
+
+def extract_candidates(doc, award_name: str) -> set[str]:
+    # ner first, then fallback to quotes and titlecase spans
+    people, titles = set(), set()
+
+    for ent in doc.ents:
+        if ent.label_ == "PERSON":
+            people.add(ent.text.strip())
+        elif ent.label_ in {"WORK_OF_ART", "ORG"}:
+            titles.add(ent.text.strip())
+
+    for m in re.findall(r"[\"“”‘’']([^\"“”‘’']+)[\"“”‘’']", doc.text):
+        titles.add(m.strip())
+
+    for span in titlecase_spans(doc):
+        titles.add(span.strip())
+
+    if is_person_award(award_name):
+        return {p for p in people if p}
+    else:
+        return {t for t in titles if t}
+
+def clean_candidate(name: str, award_name: str) -> str | None:
+    s = name.strip()
+    if not s:
+        return None
+    # drop if looks like a handle etc
+    low = s.lower()
+    if any(b in low for b in BAD_CAND_SUBSTR):
+        return None
+    # strip possessives and obvious tail noise 
+    s = re.sub(r"[’']s\b", "", s)
+    s = re.split(r"\s*[-–—]\s*", s)[0].strip()
+    # trim stray punctuation/dashes
+    s = s.strip(" -–—|,.;:!?\"'“”‘’")
+    if not s:
+        return None
+
+    if is_person_award(award_name):
+        # keep likely first + last 
+        parts = s.split()
+        if len(parts) < 2:
+            return None
+        keep = parts[:2]
+        # include a third token if hyphenated surname piece (Day-Lewis)
+        if len(parts) >= 3 and ("-" in parts[2] or parts[2][0:1].isupper()):
+            keep.append(parts[2])
+        cleaned = " ".join(keep).strip()
+        # start with capital
+        if not all(p[:1].isupper() for p in keep[:2]):
+            return None
+        return cleaned
+    else:
+        # drop category words 
+        words = [w for w in s.split() if w.lower() not in STOP_SPAN]
+        cleaned = " ".join(words).strip()
+        if not cleaned:
+            return None
+        # avoid returning generic words
+        if cleaned.lower() in {"best", "drama", "comedy", "musical", "series"}:
+            return None
+        return cleaned
+
+# define main
+def extract_nominees(
+    tweets: List[str | dict],
+    award_names: List[str],
+    top_k: int = 4,
+    debug: bool = False,
+) -> Dict[str, List[str]]:
+    """fast, no-internet nominees extractor. keeps it simple and quick.
+
+    tweets: list of tweet strings or dicts with text/text_original
+    award_names: list of canonical award names (lowercase, hyphens ok)
+    top_k: return this many per award (default 4)
+    """
+    # verb hints
+    hints = (
+        "best ", " nominee", " nomin", "should win", "should have won", "wins", "won"
+    )
+    drop_if = ("dress", "red carpet", "monologue")
+
+    # per award counters
+    buckets: Dict[str, Counter] = {aw: Counter() for aw in award_names}
+
+    def ratio(a: str, b: str) -> float:
+        # difflib ratio on normalized strings
+        return SequenceMatcher(None, normalize(a), normalize(b)).ratio()
+
+    for row in tweets:
+        text = to_text(row)
+        if not text:
+            continue
+        low = text.lower()
+
+        # fast relevance gate
+        if not any(h in low for h in hints):
+            continue
+        if any(bad in low for bad in drop_if):
             continue
 
-    # filter tweets with nominee-related keywords
-    keywords = ["nominated", "nominees", "deserves", "should win", "goes to", "hope", "nominee"]
-    filtered_tweets = [tweet for tweet in cleaned_tweets if any(kw in tweet.lower() for kw in keywords)]
-    print(f"\U0001f9f9 Filtered down to {len(filtered_tweets)} relevant tweets")
+        phrase = slice_best_phrase(low, max_tokens=8) or low
+        # combine token overlap with a light difflib ratio
+        scores = []
+        for a in award_names:
+            sc = 0.7 * token_overlap(phrase, a) + 0.3 * ratio(phrase, a)
+            scores.append((sc, a))
+        best_sc, best_aw = max(scores, key=lambda x: x[0])
+        if best_sc < 0.35:
+            continue
 
-    # define nominee-related regex patterns
-    nominee_patterns = [
-        r"(?:nominated for|nominees for|is nominated for|are nominated for)\s+(.*?)(?:[.,;:!?]|$)",
-        r"(?:hope|should|deserves|goes to)\s+(.*?)(?:[.,;:!?]|$)",
-        r"(.*?)\s+is\s+nominated",
-        r"(.*?)\s+(?:wins|won|takes|gets|received)\s+(.*?)"
-    ]
-
-    print(f"\U0001f9ea Running nominee extraction on {len(tweets)} tweets")
-
-    for tweet in filtered_tweets:
-        tweet_lower = tweet.lower()
-        doc = nlp(tweet)
-
-        for pattern in nominee_patterns:
-            matches = re.findall(pattern, tweet_lower)
-            if not matches:
+        # clean and count
+        doc = _NLP(text)
+        seen_this_tweet = set()
+        for cand in extract_candidates(doc, best_aw):
+            cleaned = clean_candidate(cand, best_aw)
+            if not cleaned:
                 continue
+            key = normalize(cleaned)
+            if key in seen_this_tweet:
+                continue
+            seen_this_tweet.add(key)
+            buckets[best_aw][cleaned] += 1
+            if debug:
+                print(f"[{best_aw}] +1 :: {cleaned}")
 
-            if isinstance(matches[0], tuple):
-                matched_chunks = [item for pair in matches for item in pair]
-            else:
-                matched_chunks = matches
-
-            for chunk in matched_chunks:
-                chunk_doc = nlp(chunk)
-                print(f"\u2705 Match: {chunk}")
-                print(f"\U0001f50e Entities: {[ent.text for ent in chunk_doc.ents]}")
-
-                # named entity recognition
-                extracted_entities = [ent.text.strip() for ent in chunk_doc.ents if ent.label_ in {"PERSON", "WORK_OF_ART", "ORG"}]
-
-                # POS tagging
-                tokens = word_tokenize(chunk)
-                pos_tags = pos_tag(tokens)
-                pos_names = [word for word, tag in pos_tags if tag in {"NNP", "NN"}]
-
-                # garbage filters
-                garbage_phrases = {"doesn", "lol", "xo", "the year", "next year", "this year", "one", "two", "today", "tomorrow", "tonight"}
-                cleaned_entities = set()
-
-                for ent in extracted_entities:
-                    ent_clean = ent.lower().strip()
-                    if ent_clean not in garbage_phrases and len(ent_clean) > 2 and not ent_clean.isdigit():
-                        ent_title = ent.title().replace("’s", "").replace("'s", "").strip()
-                        if ent_title.lower() in {"congrats", "win", "won", "award", "globe"}:
-                            continue
-                        if "http" in ent_title.lower() or "@" in ent_title:
-                            continue
-                        cleaned_entities.add(ent_title)
-
-                for name in pos_names:
-                    name_clean = name.strip().title()
-                    if len(name_clean) > 2 and name_clean.lower() not in garbage_phrases:
-                        cleaned_entities.add(name_clean)
-
-                # merge close matches
-                deduped_entities = set()
-                for ent in cleaned_entities:
-                    match = get_close_matches(ent, deduped_entities, cutoff=0.85)
-                    if match:
-                        deduped_entities.add(match[0])
-                    else:
-                        deduped_entities.add(ent)
-
-                # associate entities with awards
-                for ent_text in deduped_entities:
-                    # IMDb validation filter
-                    for award in HARD_AWARD_CATEGORIES:
-                        award_words = set(inflection.singularize(word) for word in award.lower().split()) - {"best", "by", "in", "a", "the", "of", "-", "or"}
-                        match_count = sum(1 for word in award_words if word in tweet_lower)
-                        if match_count >= 2:
-                            # entity-type-aware validation
-                            if (
-                                ("motion picture" in award or "film" in award or "movie" in award) and is_real_movie(ent_text)
-                            ) or (
-                                ("actress" in award or "actor" in award or "cecil" in award or "director" in award) and is_real_person(ent_text)
-                            ):
-                                nominees[award].add(ent_text)
-
-    for award, names in nominees.items():
-        print(f"\U0001f3c6 Final nominees for {award}: {names}")
-
-    return {award: sorted(set(nominees.get(award, []))) for award in HARD_AWARD_CATEGORIES}
+    results: Dict[str, List[str]] = {}
+    for aw in award_names:
+        merged, surface = Counter(), {}
+        for name, cnt in buckets[aw].items():
+            key = normalize(name)
+            merged[key] += cnt
+            surface.setdefault(key, name)
+        results[aw] = [surface[k] for k, _ in merged.most_common(top_k)]
+    return results

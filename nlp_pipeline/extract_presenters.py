@@ -13,38 +13,9 @@ from functools import lru_cache
 from tqdm import tqdm
 import json
 from rapidfuzz import fuzz, process
+import pandas as pd
 ia = Cinemagoer()
 
-HARD_AWARD_CATEGORIES = {
-    "best screenplay - motion picture",
-    "best director - motion picture",
-    "best performance by an actress in a television series - comedy or musical",
-    "best foreign language film",
-    "best performance by an actor in a supporting role in a motion picture",
-    "best performance by an actress in a supporting role in a series, mini-series or motion picture made for television",
-    "best motion picture - comedy or musical",
-    "best performance by an actress in a motion picture - comedy or musical",
-    "best mini-series or motion picture made for television",
-    "best original score - motion picture",
-    "best performance by an actress in a television series - drama",
-    "best performance by an actress in a motion picture - drama",
-    "cecil b. demille award",
-    "best performance by an actor in a motion picture - comedy or musical",
-    "best motion picture - drama",
-    "best performance by an actor in a supporting role in a series, mini-series or motion picture made for television",
-    "best performance by an actress in a supporting role in a motion picture",
-    "best television series - drama",
-    "best performance by an actor in a mini-series or motion picture made for television",
-    "best performance by an actress in a mini-series or motion picture made for television",
-    "best animated feature film",
-    "best original song - motion picture",
-    "best performance by an actor in a motion picture - drama",
-    "best television series - comedy or musical",
-    "best performance by an actor in a television series - drama",
-    "best performance by an actor in a television series - comedy or musical"
-}
-
-# Helper functions to validate real movies and people using Cinemagoer
 
 @lru_cache(maxsize=10000)
 def is_real_person(name):
@@ -95,8 +66,8 @@ def best_award_match(extracted_phrase, official_awards):
     if best_score >= 70:  # adjust threshold
         return best_match
     else:
-        if best_score >= 65:
-            print(f"No good match for: {extracted_phrase} (best {best_score}) match to {best_match}")
+        # if best_score >= 65:
+            # print(f"No good match for: {extracted_phrase} (best {best_score}) match to {best_match}")
         return None
 
 def find_best_imdb_match(name, top_n=3):
@@ -104,7 +75,7 @@ def find_best_imdb_match(name, top_n=3):
     try:
         results = ia.search_person(name)
     except Exception as e:
-        print(f"IMDb error for {name}: {e}")
+        # print(f"IMDb error for {name}: {e}")
         return None
     
     if not results:
@@ -161,42 +132,36 @@ def merge_similar_names_by_award(results_dict):
         cleaned_names = list(merged.keys())
         merged_results[award] = cleaned_names
 
-        for imdb_name, raw_variants in merged.items():
-            if len(raw_variants) > 1:
-                print(f"Merged {raw_variants} -> {imdb_name}")
-        if removed:
-            print(f"Removed (not found on IMDb): {removed}")
+        # for imdb_name, raw_variants in merged.items():
+        #     if len(raw_variants) > 1:
+        #         print(f"Merged {raw_variants} -> {imdb_name}")
+        # if removed:
+        #     print(f"Removed (not found on IMDb): {removed}")
 
     return merged_results
 
 nlp = spacy.load("en_core_web_sm")
 
-def extract_presenters(tweets, award_names):
-    '''
-    Given cleaned tweets and known award names, return a dictionary mapping
-    each award to a list of nominee names extracted from tweets.
-    '''
+# def extract_presenters(tweets, award_names):
+def extract_presenters(data_path, HARD_AWARD_CATEGORIES):
+    data = pd.read_json(data_path, lines=True)
+    tweets = data["text"]
+    
     presenters = defaultdict(set)
+    for award in HARD_AWARD_CATEGORIES:
+        presenters[award] = set()
 
     # clean and normalize tweets
     
-    cleaned_tweets = []
-    for tweet in tqdm(tweets, desc="Processing data"):
-        try:
-            fixed = ftfy.fix_text(tweet)
-            normalized = unidecode(fixed)
-            cleaned_tweets.append(normalized)
-        except:
-            continue
    
-    keywords = ["present", "announce", "read", "introduce", "give",]
-    filtered_tweets = [t for t in cleaned_tweets if any(kw in t.lower() for kw in keywords)]
+    keywords = ["present", "announce", "read", "introduce", "give"]
+    filtered_tweets = [t for t in tweets if any(kw in t.lower() for kw in keywords)]
     
     print(f"Filtered down to {len(filtered_tweets)} presenter-related tweets")
-    output_file = 'presenter_related.json'
-    with open(output_file, "w") as f:
-        json.dump(filtered_tweets, f, indent=2)
-    print(f"Saved {len(filtered_tweets)} tweets to {output_file}")
+    # output_file = 'presenter_related.json'
+    # with open(output_file, "w") as f:
+    #     json.dump(filtered_tweets, f, indent=2)
+    # print(f"Saved {len(filtered_tweets)} tweets to {output_file}")
     
     # with open("presenter_related.json", "r") as f:
     #     filtered_tweets = json.load(f)
@@ -213,8 +178,8 @@ def extract_presenters(tweets, award_names):
     presenter_STOPWORDS = {"As", "They", "Are", "While", "When"}
     
 
-    # for tweet in tqdm(filtered_tweets, desc="Parsing"):
-    for tweet in filtered_tweets:
+    for tweet in tqdm(filtered_tweets, desc="Extracting presenters"):
+    # for tweet in filtered_tweets:
         tweet_lower = tweet.lower()
 
         for pattern in presenter_patterns:
@@ -240,8 +205,8 @@ def extract_presenters(tweets, award_names):
                         for ent in doc.ents:
                             if ent.label_ == "PERSON":
                                 clean_names.append(ent.text)
-                            else:
-                                print(f"{ent.text} Not name")
+                            # else:
+                                # print(f"{ent.text} Not name")
                                 
                 if clean_names:
                     if award_raw:
@@ -257,8 +222,8 @@ def extract_presenters(tweets, award_names):
 
         
     results = merge_similar_names_by_award(presenters)
-    for award, names in results.items():
-        print(f"{award}: {names}")
+    # for award, names in results.items():
+    #     print(f"{award}: {names}")
 
     # return {award: sorted(set(presenters.get(award, []))) for award in award_names}
     return {award: sorted(list(names)) for award, names in results.items()}

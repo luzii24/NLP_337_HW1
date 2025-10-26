@@ -5,3 +5,6 @@ ftfy
 unidecode
 inflection
 langdetect
+icrawler
+rapidfuzz
+cinemagoer
