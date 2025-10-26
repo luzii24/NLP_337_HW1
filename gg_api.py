@@ -1,5 +1,6 @@
 '''Version 0.5'''
-
+from nlp_pipeline.extract_awards import extract_awards
+from nlp_pipeline.extract_presenters import extract_presenters
 # Year of the Golden Globes ceremony being analyzed
 YEAR = "2013"
 
@@ -54,7 +55,8 @@ def get_awards(year):
         - Award names should be extracted from tweets, not hardcoded
         - The only hardcoded part allowed is the word "Best"
     '''
-    # Your code here
+    cleaned_path = "tweets_cleaned.jsonl"
+    awards = extract_awards(cleaned_path)
     return awards
 
 def get_nominees(year):
@@ -134,7 +136,8 @@ def get_presenters(year):
         - Use the hardcoded award names as keys (from the global AWARD_NAMES list)
         - Each value should be a list of strings, even if there's only one presenter
     '''
-    # Your code here
+    cleaned_path = "tweets_cleaned.jsonl"
+    presenters = extract_presenters(cleaned_path)
     return presenters
 
 def pre_ceremony():
@@ -222,7 +225,7 @@ def pre_ceremony():
             out.write(json.dumps(rec, ensure_ascii=False) + "\n")
             wrote += 1
 
-    print(f"Pre-ceremony: wrote {wrote} cleaned tweets to tweets_cleaned.jsonl")
+    print(f"Pre-ceremony: wrote {wrote} cleaned tweets to tweets_cleaned_{year}.jsonl")
     print("Pre-ceremony processing complete.")
     return
 
