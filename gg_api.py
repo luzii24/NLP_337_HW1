@@ -137,7 +137,7 @@ def get_presenters(year):
         - Each value should be a list of strings, even if there's only one presenter
     '''
     cleaned_path = "tweets_cleaned.jsonl"
-    presenters = extract_presenters(cleaned_path)
+    presenters = extract_presenters(cleaned_path, AWARD_NAMES)
     return presenters
 
 def pre_ceremony():
