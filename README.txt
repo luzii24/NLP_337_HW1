@@ -19,6 +19,8 @@ unidecode
 inflection
 langdetect
 icrawler
+rapidfuzz
+cinemagoer
 
 Downloads:
 - NLTK VADER lexicon used for sentiment analysis. The code will download it automatically on the first run.
