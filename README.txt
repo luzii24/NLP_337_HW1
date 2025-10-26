@@ -35,8 +35,9 @@ To Run:
     - get_presenters()
 - after these it will make calls for additional goals
     - red carpet: finds who were the worst/best dressed and uploads a picture of each
+        - Results: Bradley Cooper was Best Dressed and Sofia Vergara was Worst Dressed 
     - humor: Finds the top funniest people of the night and popular jokes themes
-    - 
+        - Funniest People: ['Amy Poehler', 'Tina Fey', 'Will Ferrell', 'James Cameron', 'Kristen Wiig']
     - 
 
 
